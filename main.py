@@ -1,77 +1,69 @@
-import os
 import subprocess
 import time
+import sys
 
-# Yes, this was vibecoded 
-HOSTAPD_SERVICE = "hostapd"
-DNSMASQ_SERVICE = "dnsmasq"
-NETWORK_MANAGER = "NetworkManager"
+AP_IP = "10.3.141.1"
 
 def run(cmd):
-    subprocess.run(cmd, shell=True)
+    return subprocess.run(cmd, shell=True, capture_output=True, text=True)
 
-def start_hotspot():
-    print("Switching to hotspot mode...")
-
-    run("sudo systemctl disable NetworkManager")
+def enable_ap_boot():
+    print("Ensuring AP is default on boot...")
     run("sudo systemctl enable hostapd")
     run("sudo systemctl enable dnsmasq")
+    run("sudo systemctl disable NetworkManager")
 
-    # delayed execution so SSH session doesn't die immediately
-    run('sudo bash -c "sleep 5; systemctl stop NetworkManager; systemctl restart hostapd; systemctl restart dnsmasq" &')
-
-    print("Hotspot starting in ~10 seconds.")
-    print("Reconnect to hotspot network afterwards.")
+def start_ap_now():
+    print("Starting hotspot...")
+    run('sudo bash -c "sleep 3; systemctl stop NetworkManager; systemctl restart hostapd; systemctl restart dnsmasq" &')
+    print(f"Reconnect via hotspot (usually {AP_IP})")
 
 def connect_wifi():
-    ssid = input("Enter WiFi SSID: ")
-    password = input("Enter WiFi password: ")
+    ssid = input("SSID: ")
+    password = input("Password: ")
 
-    print("Configuring WiFi...")
+    print("Attempting WiFi connection...")
 
-    # create wpa config
-    config = f'''
-country=LV
-ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-update_config=1
+    # ensure NetworkManager is running temporarily
+    run("sudo systemctl start NetworkManager")
 
-network={{
-    ssid="{ssid}"
-    psk="{password}"
-}}
-'''
+    # try connecting
+    cmd = f"nmcli dev wifi connect '{ssid}' password '{password}'"
+    result = run(cmd)
 
-    with open("/tmp/wpa_supplicant.conf", "w") as f:
-        f.write(config)
+    if result.returncode != 0:
+        print("WiFi connection failed.")
+        print("Keeping AP mode as boot default.")
+        print(result.stderr.strip())
+        return
 
-    run("sudo mv /tmp/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant.conf")
+    print("Connected successfully.")
 
-    run("sudo systemctl enable NetworkManager")
-    run("sudo systemctl disable hostapd")
-    run("sudo systemctl disable dnsmasq")
+    # schedule switch so SSH doesn't die immediately
+    run('sudo bash -c "sleep 5; systemctl stop hostapd; systemctl stop dnsmasq; systemctl enable NetworkManager; systemctl restart NetworkManager" &')
 
-    run('sudo bash -c "sleep 5; systemctl stop hostapd; systemctl stop dnsmasq; systemctl start NetworkManager" &')
-
-    print("Connecting to WiFi in ~10 seconds.")
-    print("SSH will reconnect via the router.")
+    print("Switching to WiFi mode in ~5 seconds.")
+    print("SSH will reconnect via your router.")
 
 def menu():
-    print("\nWiFi Mode Selector")
-    print("------------------")
-    print("1) Start Hotspot (default on boot)")
-    print("2) Connect to WiFi network")
+    enable_ap_boot()
+
+    print("\nWiFi / Hotspot Manager")
+    print("----------------------")
+    print("1) Start hotspot now")
+    print("2) Connect to WiFi")
     print("3) Exit")
 
-    choice = input("Select option: ")
+    choice = input("Choice: ")
 
     if choice == "1":
-        start_hotspot()
+        start_ap_now()
 
     elif choice == "2":
         connect_wifi()
 
     else:
-        print("Exiting")
+        sys.exit()
 
 if __name__ == "__main__":
     menu()
