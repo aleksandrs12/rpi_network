@@ -22,32 +22,23 @@ def connect_wifi():
     ssid = input("SSID: ")
     password = input("Password: ")
 
-    print("Prepping interface (Stopping AP)...")
-    # 1. Stop the AP services first so the hardware is free
-    run("sudo systemctl stop hostapd")
-    run("sudo systemctl stop dnsmasq")
+    print("Transitioning to WiFi Client mode...")
     
-    print("Starting NetworkManager...")
-    run("sudo systemctl start NetworkManager")
+    # Create a small shell script on the fly to handle the transition 
+    # independent of this Python process
+    transition_cmd = (
+        f"sleep 2 && "
+        f"systemctl stop hostapd dnsmasq && "
+        f"systemctl start NetworkManager && "
+        f"nmcli dev wifi connect '{ssid}' password '{password}'"
+    )
     
-    # 2. Give the radio a moment to wake up
-    time.sleep(2) 
-
-    print(f"Attempting to connect to {ssid}...")
-    # 3. Use --ask or explicit variables to ensure it targets the right one
-    cmd = f"sudo nmcli device wifi connect '{ssid}' password '{password}'"
-    result = run(cmd)
-
-    if result.returncode != 0:
-        print("WiFi connection failed. Reverting to AP...")
-        run("sudo systemctl stop NetworkManager")
-        run("sudo systemctl start hostapd")
-        return
-
-    print("Connected successfully.")
-    # 4. Make it permanent for this session
-    run("sudo systemctl enable NetworkManager") 
-    print("Switching complete. Use 'ifconfig' to find your new IP.")
+    # Run this in the background and exit immediately
+    subprocess.Popen(['sudo', 'bash', '-c', transition_cmd])
+    
+    print("Commands sent. Connection will drop now.")
+    print("Check your phone's hotspot list in 15 seconds.")
+    sys.exit()
 
 def menu():
     enable_ap_boot()
