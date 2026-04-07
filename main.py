@@ -22,28 +22,32 @@ def connect_wifi():
     ssid = input("SSID: ")
     password = input("Password: ")
 
-    print("Attempting WiFi connection...")
-
-    # ensure NetworkManager is running temporarily
+    print("Prepping interface (Stopping AP)...")
+    # 1. Stop the AP services first so the hardware is free
+    run("sudo systemctl stop hostapd")
+    run("sudo systemctl stop dnsmasq")
+    
+    print("Starting NetworkManager...")
     run("sudo systemctl start NetworkManager")
+    
+    # 2. Give the radio a moment to wake up
+    time.sleep(2) 
 
-    # try connecting
-    cmd = f"nmcli dev wifi connect '{ssid}' password '{password}'"
+    print(f"Attempting to connect to {ssid}...")
+    # 3. Use --ask or explicit variables to ensure it targets the right one
+    cmd = f"sudo nmcli device wifi connect '{ssid}' password '{password}'"
     result = run(cmd)
 
     if result.returncode != 0:
-        print("WiFi connection failed.")
-        print("Keeping AP mode as boot default.")
-        print(result.stderr.strip())
+        print("WiFi connection failed. Reverting to AP...")
+        run("sudo systemctl stop NetworkManager")
+        run("sudo systemctl start hostapd")
         return
 
     print("Connected successfully.")
-
-    # schedule switch so SSH doesn't die immediately
-    run('sudo bash -c "sleep 5; systemctl stop hostapd; systemctl stop dnsmasq; systemctl enable NetworkManager; systemctl restart NetworkManager" &')
-
-    print("Switching to WiFi mode in ~5 seconds.")
-    print("SSH will reconnect via your router.")
+    # 4. Make it permanent for this session
+    run("sudo systemctl enable NetworkManager") 
+    print("Switching complete. Use 'ifconfig' to find your new IP.")
 
 def menu():
     enable_ap_boot()
